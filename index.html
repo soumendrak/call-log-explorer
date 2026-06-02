@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Call Log Explorer</title>
+<style>
+:root {
+  --bg: #0f0f1a;
+  --surface: #1a1a2e;
+  --accent: #ff6b35;
+  --text: #e0e0e0;
+  --text-muted: #8888a0;
+  --border: #2a2a3e;
+  --danger: #e74c3c;
+  --success: #2ecc71;
+  --warning: #f39c12;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); display: flex; min-height: 100vh; }
+.sidebar { width: 240px; background: var(--surface); border-right: 1px solid var(--border); padding: 20px 0; display: flex; flex-direction: column; }
+.sidebar h1 { font-size: 1.1rem; padding: 0 20px 20px; color: var(--accent); border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+.sidebar a { display: block; padding: 10px 20px; color: var(--text-muted); text-decoration: none; font-size: 0.9rem; border-left: 3px solid transparent; transition: all 0.2s; cursor: pointer; }
+.sidebar a:hover, .sidebar a.active { color: var(--accent); background: rgba(255,107,53,0.08); border-left-color: var(--accent); }
+.main { flex: 1; padding: 30px; overflow-y: auto; }
+.page { display: none; }
+.page.active { display: block; }
+h2 { font-size: 1.3rem; margin-bottom: 20px; color: var(--text); }
+.dropzone { border: 2px dashed var(--border); border-radius: 16px; padding: 60px 20px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 20px; }
+.dropzone:hover, .dropzone.drag { border-color: var(--accent); background: rgba(255,107,53,0.05); }
+.dropzone .icon { font-size: 48px; margin-bottom: 12px; }
+.dropzone .desc { color: var(--text-muted); font-size: 0.9rem; }
+.dropzone .formats { color: var(--text-muted); font-size: 0.75rem; margin-top: 8px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+.card .label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.card .value { font-size: 1.4rem; font-weight: 700; color: var(--accent); }
+.flex { display: flex; gap: 10px; align-items: center; }
+.mb-16 { margin-bottom: 16px; }
+.mt-16 { margin-top: 16px; }
+input.search { width: 100%; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.9rem; outline: none; }
+input.search:focus { border-color: var(--accent); }
+.btn { padding: 10px 20px; background: var(--accent); color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: opacity 0.2s; }
+.btn:hover { opacity: 0.9; }
+.btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+.btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+.table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: auto; max-height: 60vh; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+th { position: sticky; top: 0; background: var(--surface); padding: 12px 14px; text-align: left; color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; border-bottom: 2px solid var(--accent); z-index: 1; }
+td { padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+tr:hover td { background: rgba(255,107,53,0.04); }
+.chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+.chart-container h3 { font-size: 0.95rem; color: var(--text-muted); margin-bottom: 12px; }
+canvas { width: 100%; height: 250px; }
+.badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
+.badge-answered { background: rgba(46,204,113,0.2); color: var(--success); }
+.badge-busy { background: rgba(243,156,18,0.2); color: var(--warning); }
+.badge-noanswer { background: rgba(231,76,60,0.2); color: var(--danger); }
+.badge-failed { background: rgba(231,76,60,0.3); color: var(--danger); }
+.badge-outbound { background: rgba(52,152,219,0.2); color: #3498db; }
+.badge-inbound { background: rgba(155,89,182,0.2); color: #9b59b6; }
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <h1>📞 Call Explorer</h1>
+  <a class="active" data-page="upload">📤 Upload</a>
+  <a data-page="table">📋 Table</a>
+  <a data-page="charts">📊 Charts</a>
+</div>
+<div class="main">
+  <div id="upload" class="page active">
+    <h2>Upload Plivo CDR Data</h2>
+    <div class="dropzone" id="dropzone">
+      <div class="icon">📁</div>
+      <div class="desc">Drag & drop a Plivo CDR JSON or CSV file here</div>
+      <div class="formats">Accepted: .json, .csv</div>
+    </div>
+    <input type="file" id="fileInput" accept=".json,.csv" style="display:none;">
+    <div class="cards" id="uploadStats"></div>
+    <div id="uploadPreview" class="table-wrap" style="max-height:300px;"></div>
+  </div>
+  <div id="table" class="page">
+    <h2>Call Records</h2>
+    <div class="flex mb-16">
+      <input type="text" class="search" id="searchInput" placeholder="🔍 Search all fields..." oninput="renderTable()">
+      <button class="btn btn-sm btn-outline" onclick="exportFilteredCSV()">📥 Export</button>
+    </div>
+    <div style="color:var(--text-muted);font-size:0.8rem;margin-bottom:8px;" id="recordCount"></div>
+    <div class="table-wrap" id="tableContainer"></div>
+  </div>
+  <div id="charts" class="page">
+    <h2>Call Analytics</h2>
+    <div class="chart-container">
+      <h3>Call Outcomes</h3>
+      <canvas id="outcomeChart"></canvas>
+    </div>
+    <div class="chart-container">
+      <h3>Call Direction</h3>
+      <canvas id="directionChart"></canvas>
+    </div>
+    <div class="chart-container">
+      <h3>Duration Distribution</h3>
+      <canvas id="durationChart"></canvas>
+    </div>
+  </div>
+</div>
+<script>
+let records = [];
+let columns = [];
+
+// ---- Navigation ----
+document.querySelectorAll('.sidebar a').forEach(a => {
+  a.addEventListener('click', () => {
+    document.querySelectorAll('.sidebar a').forEach(x => x.classList.remove('active'));
+    a.classList.add('active');
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById(a.dataset.page).classList.add('active');
+    if (a.dataset.page === 'upload') renderUpload();
+    if (a.dataset.page === 'table') renderTable();
+    if (a.dataset.page === 'charts') renderCharts();
+  });
+});
+
+// ---- Drag & Drop ----
+const dropzone = document.getElementById('dropzone');
+dropzone.addEventListener('click', () => document.getElementById('fileInput').click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+});
+document.getElementById('fileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) processFile(file);
+});
+
+// ---- File Processing ----
+async function processFile(file) {
+  const text = await file.text();
+  if (file.name.endsWith('.json')) {
+    try {
+      let data = JSON.parse(text);
+      if (!Array.isArray(data)) data = data.data || data.records || data.calls || data.cdr || [data];
+      if (!Array.isArray(data)) throw new Error('Could not extract array from JSON');
+      records = data;
+      columns = records.length ? Object.keys(records[0]) : [];
+    } catch(e) {
+      alert('Invalid JSON: ' + e.message);
+      return;
+    }
+  } else if (file.name.endsWith('.csv')) {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) { alert('CSV must have header + data'); return; }
+    // Parse CSV (handle quoted fields)
+    const parseCSVLine = (line) => {
+      const result = [];
+      let current = '', inQuotes = false;
+      for (const ch of line) {
+        if (ch === '"') { inQuotes = !inQuotes; }
+        else if (ch === ',' && !inQuotes) { result.push(current.trim()); current = ''; }
+        else { current += ch; }
+      }
+      result.push(current.trim());
+      return result;
+    };
+    columns = parseCSVLine(lines[0]).map(c => c.replace(/^"|"$/g,'').trim());
+    records = lines.slice(1).filter(l => l.trim()).map(line => {
+      const vals = parseCSVLine(line);
+      const obj = {};
+      columns.forEach((c, i) => obj[c] = vals[i] || '');
+      return obj;
+    });
+  }
+  renderUpload();
+  renderTable();
+}
+
+// ---- Field detection helpers ----
+function findField(names) {
+  for (const n of names) {
+    const found = columns.find(c => c.toLowerCase() === n.toLowerCase());
+    if (found) return found;
+  }
+  for (const n of names) {
+    const found = columns.find(c => c.toLowerCase().includes(n.toLowerCase()));
+    if (found) return found;
+  }
+  return null;
+}
+
+function getNum(r, field) { const v = r[field]; return v !== undefined ? (parseFloat(v) || 0) : 0; }
+function getStr(r, field) { return (r[field] || '').toString().toLowerCase(); }
+
+// ---- Upload view ----
+function renderUpload() {
+  const stats = document.getElementById('uploadStats');
+  const preview = document.getElementById('uploadPreview');
+  if (!records.length) {
+    stats.innerHTML = '<div class="card"><div class="label">Status</div><div class="value" style="color:var(--text-muted);">No data</div></div>';
+    preview.innerHTML = '';
+    return;
+  }
+  const costField = findField(['total_amount','totalamount','cost','amount','billed_amount']);
+  const durField = findField(['bill_duration','billduration','call_duration','callduration','duration']);
+  const dirField = findField(['call_direction','calldirection','direction']);
+  const outcomeField = findField(['hangup_cause','hangupcause','call_status','callstatus','status']);
+
+  const totalCost = records.reduce((s, r) => s + getNum(r, costField), 0);
+  const totalDur = records.reduce((s, r) => s + getNum(r, durField), 0);
+  const totalCalls = records.length;
+  const outbound = records.filter(r => getStr(r, dirField) === 'outbound').length;
+  const inbound = records.filter(r => getStr(r, dirField) === 'inbound').length;
+
+  stats.innerHTML = `
+    <div class="card"><div class="label">Total Calls</div><div class="value">${totalCalls.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Total Cost</div><div class="value">$${totalCost.toFixed(2)}</div></div>
+    <div class="card"><div class="label">Total Duration</div><div class="value">${Math.round(totalDur/60)} min</div></div>
+    <div class="card"><div class="label">Out / In</div><div class="value">${outbound} / ${inbound}</div></div>
+    <div class="card"><div class="label">Columns</div><div class="value">${columns.length}</div></div>
+  `;
+
+  preview.innerHTML = `<table><thead><tr>${columns.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${
+    records.slice(0, 10).map(r => `<tr>${columns.map(c => `<td>${r[c] || ''}</td>`).join('')}</tr>`).join('')
+  }${records.length > 10 ? `<tr><td colspan="${columns.length}" style="color:var(--text-muted);text-align:center;">... +${records.length - 10} more rows</td></tr>` : ''}</tbody></table>`;
+}
+
+// ---- Table view ----
+function renderTable() {
+  const search = (document.getElementById('searchInput')?.value || '').toLowerCase();
+  let filtered = records;
+  if (search) {
+    filtered = records.filter(r =>
+      columns.some(c => (r[c] || '').toString().toLowerCase().includes(search))
+    );
+  }
+  document.getElementById('recordCount').textContent = `Showing ${filtered.length} of ${records.length} records`;
+
+  const costField = findField(['total_amount','totalamount','cost','amount']);
+  const durField = findField(['bill_duration','billduration','call_duration','callduration','duration']);
+  const outcomeField = findField(['hangup_cause','hangupcause','call_status','callstatus','status']);
+  const dirField = findField(['call_direction','calldirection','direction']);
+
+  // Determine which columns to show (prioritize useful ones)
+  let showCols = columns;
+  const priority = ['from_number','to_number','call_direction','total_amount','bill_duration','hangup_cause','start_time','end_time','call_uuid'];
+  const ordered = [...new Set([...priority.filter(c => columns.includes(c)), ...columns])];
+  showCols = ordered;
+
+  const formatVal = (r, col) => {
+    const v = r[col] || '';
+    if (col === costField) return `<span style="color:var(--accent);font-weight:600;">$${parseFloat(v).toFixed(4)}</span>`;
+    if (col === durField) return `${Math.round(parseFloat(v) || 0)}s`;
+    if (col === dirField) {
+      const cls = (v+'').toLowerCase().includes('out') ? 'badge-outbound' : 'badge-inbound';
+      return `<span class="badge ${cls}">${v}</span>`;
+    }
+    if (col === outcomeField) {
+      const lc = (v+'').toLowerCase();
+      let cls = 'badge-answered';
+      if (lc.includes('busy')) cls = 'badge-busy';
+      else if (lc.includes('no_answer') || lc.includes('no answer')) cls = 'badge-noanswer';
+      else if (lc.includes('failed') || lc.includes('error')) cls = 'badge-failed';
+      return `<span class="badge ${cls}">${v}</span>`;
+    }
+    return v;
+  };
+
+  document.getElementById('tableContainer').innerHTML = `
+    <table><thead><tr>${showCols.map(c => `<th>${c.replace(/_/g,' ')}</th>`).join('')}</tr></thead>
+    <tbody>${filtered.map(r => `<tr>${showCols.map(c => `<td>${formatVal(r, c)}</td>`).join('')}</tr>`).join('')}</tbody></table>
+  `;
+}
+
+function exportFilteredCSV() {
+  const search = (document.getElementById('searchInput')?.value || '').toLowerCase();
+  let filtered = records;
+  if (search) filtered = records.filter(r => columns.some(c => (r[c]||'').toString().toLowerCase().includes(search)));
+  const csv = columns.join(',') + '\n' + filtered.map(r => columns.map(c => {
+    const v = (r[c]||'').toString();
+    return v.includes(',') || v.includes('"') ? `"${v.replace(/"/g,'""')}"` : v;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'cdr-export.csv'; a.click();
+}
+
+// ---- Charts ----
+function drawPie(canvasId, labels, values) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 250 * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = '250px';
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = 250;
+  const cx = W * 0.35, cy = H/2, r = Math.min(cx - 20, cy - 20);
+  const colors = ['#2ecc71','#e74c3c','#f39c12','#ff6b35','#3498db','#9b59b6','#1abc9c','#e67e22'];
+  const total = values.reduce((a,b)=>a+b,0);
+  ctx.clearRect(0,0,W,H);
+  if (!total) { ctx.fillStyle='#8888a0'; ctx.font='14px sans-serif'; ctx.fillText('No data',cx-30,cy); return; }
+  let angle = -Math.PI/2;
+  values.forEach((v,i) => {
+    const slice = (v/total)*Math.PI*2;
+    ctx.fillStyle = colors[i%colors.length];
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,angle,angle+slice); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#0f0f1a'; ctx.lineWidth=2; ctx.stroke();
+    angle += slice;
+  });
+  let ly = 20;
+  values.forEach((v,i) => {
+    if (!v) return;
+    ctx.fillStyle = colors[i%colors.length];
+    ctx.fillRect(W*0.65,ly,12,12);
+    ctx.fillStyle='#e0e0e0'; ctx.font='12px sans-serif';
+    ctx.fillText(`${labels[i]}: ${v} (${((v/total)*100).toFixed(1)}%)`, W*0.65+20, ly+11);
+    ly += 24;
+  });
+}
+
+function drawHistogram(canvasId, data, bins, label) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 250 * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = '250px';
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = 250;
+  const pad = {top:20,right:20,bottom:40,left:60};
+  const cw = W-pad.left-pad.right, ch = H-pad.top-pad.bottom;
+  ctx.clearRect(0,0,W,H);
+  if (!data.length) { ctx.fillStyle='#8888a0'; ctx.font='14px sans-serif'; ctx.fillText('No data',pad.left,H/2); return; }
+  const max = Math.max(...bins, 1);
+  const barW = cw / bins.length - 2;
+  bins.forEach((v,i) => {
+    const x = pad.left + i * (cw/bins.length) + 1;
+    const h = (v/max)*ch;
+    ctx.fillStyle = '#ff6b35';
+    ctx.beginPath(); ctx.roundRect(x, pad.top+ch-h, barW, h, 3); ctx.fill();
+    if (i % Math.max(1, Math.floor(bins.length/6)) === 0) {
+      ctx.fillStyle='#8888a0'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+      ctx.fillText(label[i] || '', x+barW/2, H-10);
+    }
+  });
+}
+
+function renderCharts() {
+  if (!records.length) return;
+  const outcomeField = findField(['hangup_cause','hangupcause','call_status','callstatus','status']);
+  const dirField = findField(['call_direction','calldirection','direction']);
+  const durField = findField(['bill_duration','billduration','call_duration','callduration','duration']);
+
+  // Outcomes
+  const outcomes = {};
+  records.forEach(r => {
+    let v = (r[outcomeField] || 'UNKNOWN').toString();
+    v = v.replace(/_/g,' ').toUpperCase();
+    if (v.length > 20) v = v.slice(0,20);
+    outcomes[v] = (outcomes[v]||0) + 1;
+  });
+  const oLabels = Object.keys(outcomes).sort((a,b) => outcomes[b]-outcomes[a]).slice(0,8);
+  const oVals = oLabels.map(l => outcomes[l]);
+  drawPie('outcomeChart', oLabels, oVals);
+
+  // Direction
+  const dirs = {};
+  records.forEach(r => {
+    const v = (r[dirField] || 'UNKNOWN').toString().toUpperCase();
+    dirs[v] = (dirs[v]||0) + 1;
+  });
+  const dLabels = Object.keys(dirs);
+  const dVals = dLabels.map(l => dirs[l]);
+  drawPie('directionChart', dLabels, dVals);
+
+  // Duration histogram
+  const durs = records.map(r => getNum(r, durField)).filter(d => d > 0);
+  if (durs.length) {
+    const maxDur = Math.max(...durs);
+    const steps = maxDur <= 60 ? [0,10,20,30,40,50,60] :
+                  maxDur <= 300 ? [0,30,60,120,180,240,300] :
+                  [0,60,120,300,600,900,Math.ceil(maxDur/60)*60];
+    const bins = new Array(steps.length-1).fill(0);
+    const labels = [];
+    for (let i = 0; i < steps.length-1; i++) {
+      labels.push(`${steps[i]}-${steps[i+1]}s`);
+      durs.forEach(d => { if (d >= steps[i] && d < steps[i+1]) bins[i]++; });
+    }
+    drawHistogram('durationChart', durs, bins, labels);
+  }
+}
+
+window.addEventListener('resize', renderCharts);
+</script>
+</body>
+</html>

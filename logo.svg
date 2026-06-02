@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="80" fill="#0f0f1a"/>
+  <!-- Phone handset -->
+  <path d="M160 120 Q160 80 200 80 L220 80 L220 200 L200 200 Q160 200 160 160 Z" fill="#1a1a2e" stroke="#ff6b35" stroke-width="8"/>
+  <path d="M352 120 Q352 80 312 80 L292 80 L292 200 L312 200 Q352 200 352 160 Z" fill="#1a1a2e" stroke="#ff6b35" stroke-width="8"/>
+  <!-- Screen area -->
+  <rect x="210" y="70" width="92" height="140" rx="16" fill="#1a1a2e" stroke="#ff6b35" stroke-width="8"/>
+  <!-- Bars inside screen -->
+  <rect x="230" y="100" width="15" height="80" rx="4" fill="#ff6b35" opacity="0.5"/>
+  <rect x="255" y="80" width="15" height="100" rx="4" fill="#ff6b35" opacity="0.7"/>
+  <rect x="280" y="110" width="15" height="70" rx="4" fill="#ff6b35"/>
+  <!-- Log lines at bottom -->
+  <line x1="170" y1="400" x2="342" y2="400" stroke="#ff6b35" stroke-width="6" stroke-linecap="round" opacity="0.3"/>
+  <line x1="180" y1="420" x2="332" y2="420" stroke="#ff6b35" stroke-width="6" stroke-linecap="round" opacity="0.5"/>
+  <line x1="190" y1="440" x2="322" y2="440" stroke="#ff6b35" stroke-width="6" stroke-linecap="round" opacity="0.7"/>
+</svg>
