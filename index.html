@@ -153,6 +153,17 @@ canvas { width: 100%; height: 250px; }
   <div id="charts" class="page">
     <h2>Call Analytics</h2>
     <div class="chart-container">
+      <h3>Daily Call Volume Trend</h3>
+      <div class="flex mb-16">
+        <select id="trendDirectionFilter" onchange="renderTrendChart()" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 12px;font-size:0.85rem;outline:none;">
+          <option value="all">All Calls</option>
+          <option value="inbound">Inbound Only</option>
+          <option value="outbound">Outbound Only</option>
+        </select>
+      </div>
+      <canvas id="trendChart"></canvas>
+    </div>
+    <div class="chart-container">
       <h3>Call Outcomes</h3>
       <canvas id="outcomeChart"></canvas>
     </div>
@@ -415,8 +426,148 @@ function drawHistogram(canvasId, data, bins, label) {
   });
 }
 
+function renderTrendChart() {
+  const canvas = document.getElementById('trendChart');
+  if (!canvas || !records.length) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 250 * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = '250px';
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = 250;
+  const pad = {top:20,right:20,bottom:50,left:60};
+  const cw = W-pad.left-pad.right, ch = H-pad.top-pad.bottom;
+  ctx.clearRect(0,0,W,H);
+
+  const dirField = findField(['call_direction','calldirection','direction']);
+  const startField = findField(['start_time','starttime','call_time','calltime']);
+  const endField = findField(['end_time','endtime']);
+  const filter = document.getElementById('trendDirectionFilter')?.value || 'all';
+
+  // Filter by direction
+  let filtered = records;
+  if (filter !== 'all') {
+    filtered = records.filter(r => getStr(r, dirField) === filter);
+  }
+
+  // Parse dates and count per day
+  const dayCounts = {};
+  filtered.forEach(r => {
+    let dateStr = '';
+    const st = r[startField];
+    if (st) {
+      const d = new Date(st);
+      if (!isNaN(d.getTime())) {
+        dateStr = d.toISOString().split('T')[0];
+      } else if (typeof st === 'string' && st.length >= 10) {
+        dateStr = st.substring(0, 10);
+      }
+    }
+    if (!dateStr && r[endField]) {
+      const d = new Date(r[endField]);
+      if (!isNaN(d.getTime())) dateStr = d.toISOString().split('T')[0];
+    }
+    if (dateStr) {
+      dayCounts[dateStr] = (dayCounts[dateStr] || 0) + 1;
+    }
+  });
+
+  const dates = Object.keys(dayCounts).sort();
+  if (!dates.length) {
+    ctx.fillStyle='#8888a0'; ctx.font='14px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('No date data available', W/2, H/2);
+    return;
+  }
+
+  const values = dates.map(d => dayCounts[d]);
+  const maxVal = Math.max(...values);
+
+  // Axes
+  ctx.strokeStyle = '#2a2a3e'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad.left, pad.top); ctx.lineTo(pad.left, pad.top+ch); ctx.lineTo(pad.left+cw, pad.top+ch); ctx.stroke();
+
+  // Y-axis labels
+  ctx.fillStyle='#8888a0'; ctx.font='10px sans-serif'; ctx.textAlign='right';
+  const ySteps = Math.min(5, Math.max(2, Math.floor(maxVal/3)));
+  const yStepVal = Math.ceil(maxVal / ySteps / 5) * 5 || 1;
+  for (let v = 0; v <= maxVal; v += yStepVal) {
+    const y = pad.top + ch - (v/maxVal)*ch;
+    ctx.fillText(String(v), pad.left-6, y+3);
+    ctx.strokeStyle='#1a1a2e'; ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left+cw, y); ctx.stroke();
+  }
+
+  // X-axis labels
+  ctx.textAlign = 'center';
+  const maxLabels = Math.min(dates.length, Math.floor(cw / 70));
+  const labelStep = Math.max(1, Math.floor(dates.length / maxLabels));
+  dates.forEach((d, i) => {
+    if (i % labelStep === 0 || i === dates.length-1) {
+      const x = pad.left + (i/dates.length)*cw;
+      ctx.fillStyle='#8888a0'; ctx.font='10px sans-serif';
+      ctx.fillText(d.substring(5), x, H - 8);
+    }
+  });
+
+  // Grid lines
+  ctx.strokeStyle='#1a1a2e'; ctx.lineWidth=1;
+  for (let v = yStepVal; v < maxVal; v += yStepVal) {
+    const y = pad.top + ch - (v/maxVal)*ch;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left+cw, y); ctx.stroke();
+  }
+
+  // Draw line chart
+  if (values.length === 1) {
+    // Single point
+    const x = pad.left + cw/2;
+    const y = pad.top + ch - (values[0]/maxVal)*ch;
+    ctx.fillStyle = '#ff6b35';
+    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ff6b35'; ctx.font='11px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(String(values[0]), x, y-10);
+  } else {
+    // Fill area
+    ctx.beginPath();
+    ctx.moveTo(pad.left, pad.top+ch);
+    values.forEach((v, i) => {
+      const x = pad.left + (i/(dates.length-1))*cw;
+      const y = pad.top + ch - (v/maxVal)*ch;
+      ctx.lineTo(x, y);
+    });
+    ctx.lineTo(pad.left+cw, pad.top+ch);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,107,53,0.15)';
+    ctx.fill();
+
+    // Draw line
+    ctx.beginPath();
+    values.forEach((v, i) => {
+      const x = pad.left + (i/(dates.length-1))*cw;
+      const y = pad.top + ch - (v/maxVal)*ch;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = '#ff6b35'; ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Draw points
+    values.forEach((v, i) => {
+      const x = pad.left + (i/(dates.length-1))*cw;
+      const y = pad.top + ch - (v/maxVal)*ch;
+      ctx.fillStyle = '#ff6b35';
+      ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill();
+    });
+  }
+
+  // Title
+  ctx.fillStyle='#8888a0'; ctx.font='11px sans-serif'; ctx.textAlign='right';
+  ctx.fillText('Calls per day', pad.left+cw, pad.top-5);
+}
+
 function renderCharts() {
   if (!records.length) return;
+  renderTrendChart();
   const outcomeField = findField(['hangup_cause','hangupcause','call_status','callstatus','status']);
   const dirField = findField(['call_direction','calldirection','direction']);
   const durField = findField(['bill_duration','billduration','call_duration','callduration','duration']);
@@ -460,7 +611,7 @@ function renderCharts() {
   }
 }
 
-window.addEventListener('resize', renderCharts);
+window.addEventListener('resize', () => { renderTrendChart(); renderCharts(); });
 </script>
 </body>
 </html>
